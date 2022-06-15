@@ -1,0 +1,83 @@
+<?php
+
+namespace App\Http\Controllers\Auth;
+
+use App\Http\Controllers\Controller;
+use Illuminate\Foundation\Validation\ValidatesRequests;
+use Illuminate\Http\Request;
+use Session;
+use Adldap\Laravel\Facades\Adldap;
+use Illuminate\Support\Facades\Auth;
+use App\Models\User;
+
+class AuthController extends Controller
+{
+    use ValidatesRequests;
+
+    function __construct(){
+        
+        
+    }
+
+    public function index()
+    {
+        return view('auth.login');
+    }  
+      
+    public function Login(Request $request)
+    {
+
+        
+        $request->validate([
+            'user_name' => 'required',
+            'password' => 'required',
+        ]);
+   
+        $credentials = $request->only('user_name', 'password');
+        $user_attemp = Auth::attempt($credentials);
+        $ldapUser = Adldap::search()->users()->find($request->user_name);
+	$username = $ldapUser->getUserPrincipalName();
+        $user = Adldap::auth()->attempt($username,$request->password);
+        if($user)
+        {
+            if(!$user_attemp)
+            {
+                $user = new User;
+                $user->user_name = $request->user_name;
+                $user->email = $request->user_name."@te.eg";
+                $user->password = $request->password;
+                $user->first_name = $ldapUser->getCommonName();
+                $user->last_name = $ldapUser->getCommonName();
+                $user->objectguid = $ldapUser->getConvertedGuid();
+                $user->active = 1;
+                $user->save();
+                Auth::login($user);
+                return redirect(url('/'));
+            }
+            else
+            {
+                $user =  auth()->guard('user')->attempt(['user_name' => $request->user_name, 'password' => $request->password ]);
+                return redirect(url('/'));
+            }
+        }
+        else
+        {
+            return \Redirect::back()->withErrors([ 'msg'=> "username or password is incorrect."])->withInput();
+        }
+        // if (Auth::attempt($credentials)) {
+        //     $user = Auth::user();
+        //     dd($user);
+        //     return redirect(url('/'));
+        // }
+  
+        // return \Redirect::back()->withErrors([ 'msg'=> "username or password is incorrect."])->withInput();
+    }
+
+    public function signOut() {
+        Session::flush();
+        Auth::logout();
+        return Redirect('login');
+    }
+
+
+}
