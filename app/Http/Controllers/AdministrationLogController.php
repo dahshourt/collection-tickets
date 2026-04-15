@@ -164,20 +164,26 @@ class AdministrationLogController extends Controller
     }
 
     /**
-     * Safely format a date value to "Y-m-d H:i:s".
-     * Works with Carbon objects, strings, and null.
+     * Safely format a date value to "d-m-Y H:i:s".
+     *
+     * The app timezone is already set to Africa/Cairo in config/app.php,
+     * so Eloquent Carbon objects are already in Cairo time.
+     * Do NOT pass a timezone to Carbon::parse() here — doing so would
+     * re-interpret the already-converted time as UTC and shift it +1 hour.
      */
-private function safeDate($date)
-{
-    if (empty($date)) return '-';
+    private function safeDate($date)
+    {
+        if (empty($date)) return '-';
 
-    try {
-        return \Carbon\Carbon::parse($date, 'Africa/Cairo')
-            ->format('d-m-Y H:i:s');
-    } catch (\Exception $e) {
-        return (string)$date;
+        try {
+            if ($date instanceof \Carbon\Carbon) {
+                return $date->format('d-m-Y H:i:s');
+            }
+            return \Carbon\Carbon::parse($date)->format('d-m-Y H:i:s');
+        } catch (\Exception $e) {
+            return (string)$date;
+        }
     }
-}
 
     /**
      * Format the details field into clean HTML lines.
