@@ -1,0 +1,142 @@
+
+@extends('layouts.master')
+@section('content')
+
+  <div class="d-flex flex-column-fluid">
+    <!--begin::Container-->
+    <div class="container">
+      <!--begin::Notice-->
+      
+      <!--end::Notice-->
+      <!--begin::Card-->
+      <div class="card card-custom">
+        <div class="card-header flex-wrap py-5">
+          <div class="card-title">
+            <h3 class="card-label">Entrprise Report
+          </div>
+          
+        </div>
+  <div class="card-body">
+          <!--begin: Datatable-->
+          <form method="post"  action="{{url('report/export_entrp_report_result')}}"  >
+            {{csrf_field()}}
+            <input type="hidden" name="created_at" value="{{$created_at}}" />
+            <input type="hidden" name="end_created_at" value="{{$end_created_at}}" />
+            <input type="hidden" name="customer_name" value="{{$customer_name}}" />
+            <input type="hidden" name="bank_transaction_date" value="{{$bank_transaction_date}}" />
+            <input type="hidden" name="transaction_amount" value="{{$transaction_amount}}" />
+            <input type="hidden" name="ticket_num" value="{{$ticket_num}}" />
+            <input type="hidden" name="account" value="{{$account}}" />
+            <input type="hidden" name="transaction_type_id" value="{{$transaction_type_id}}" />
+            <input type="hidden" name="status" value="{{$status}}" />
+            <input type="hidden" name="add_on_oracle_date" value="{{$add_on_oracle_date}}" />
+            <input type="hidden" name="creator_name_id" value="{{$creator_name_id}}" />
+            <input type="submit" value="Export" name="Export"  class="btn btn-primary mr-2" />
+          </form>
+      <div id="kt_datatable_wrapper" class="dataTables_wrapper dt-bootstrap4 no-footer">
+        <div class="row">
+          <div class="col-sm-12">
+            <table class="table table-bordered table-checkable dataTable no-footer dtr-inline collapsed" id="kt_datatable" role="grid" aria-describedby="kt_datatable_info" style="width: 818px;">
+              <thead>
+                <tr role="row" class="header-tr">
+
+                  <th class="sorting" tabindex="0" aria-controls="kt_datatable" rowspan="1" colspan="1" style="width: 61px;text-align:center" >
+                    Ticket creation date
+                  </th>
+                  {{-- <th class="sorting" tabindex="0" aria-controls="kt_datatable" rowspan="1" colspan="1" style="width: 59px;text-align:center" aria-label="Country: activate to sort column ascending">الكود</th> --}}
+                  <th class="sorting" tabindex="0" aria-controls="kt_datatable" rowspan="1" colspan="1" style="width: 50px;text-align:center" aria-label="Ship City: activate to sort column ascending">Bank transaction date </th>
+                  <th class="sorting" tabindex="0" aria-controls="kt_datatable" rowspan="1" colspan="1" style="width: 49px;" aria-label="Ship Date: activate to sort column ascending">Amount</th>
+                  <th class="sorting" tabindex="0" aria-controls="kt_datatable" rowspan="1" colspan="1" style="width: 49px;" aria-label="Ship Date: activate to sort column ascending">Account</th>
+                  <th class="sorting" tabindex="0" aria-controls="kt_datatable" rowspan="1" colspan="1" style="width: 49px;" aria-label="Ship Date: activate to sort column ascending">Total Amount</th>
+                  <th class="sorting" tabindex="0" aria-controls="kt_datatable" rowspan="1" colspan="1" style="width: 49px;" aria-label="Ship Date: activate to sort column ascending">Ticket Number</th>
+                  <th class="sorting" tabindex="0" aria-controls="kt_datatable" rowspan="1" colspan="1" style="width: 49px;" aria-label="Ship Date: activate to sort column ascending">Transaction Type</th>
+                  <th class="sorting" tabindex="0" aria-controls="kt_datatable" rowspan="1" colspan="1" style="width: 49px;" aria-label="Ship Date: activate to sort column ascending">Customer Name</th>
+                  <th class="sorting" tabindex="0" aria-controls="kt_datatable" rowspan="1" colspan="1" style="width: 49px;" aria-label="Ship Date: activate to sort column ascending">Ticket Status</th>
+
+
+                </tr>
+              </thead>
+              <tbody>
+                @foreach ($tickets as$ticket)
+                <tr>
+                  <td>{{date($ticket->created_at)}}</td>
+				  <td>{{date($ticket->bank_transaction_date)}}</td>
+				  <td>{{$ticket->transaction_amount}}</td>
+				  <td>{{$ticket->account}}</td>
+					<td class="text-center">
+
+
+						@if($ticket->ticket_multiple_settlements->count()>0)
+						<button type="button" class="btn btn-primary" data-toggle="modal" data-target="#exampleModal_{{ $ticket->id }}">
+							show
+						</button>
+						@endif
+
+						<div class="modal fade" id="exampleModal_{{ $ticket->id }}" tabindex="-1" role="dialog" aria-labelledby="exampleModalLabel_{{ $ticket->id }}" aria-hidden="true">
+							<div class="modal-dialog" role="document">
+								<div class="modal-content">
+									<div class="modal-header">
+										<h5 class="modal-title" id="exampleModalLabel_{{ $ticket->id }}">Total Amount ticket: <span style="color:red">{{$ticket->id}}</span></h5>
+										</h5>
+										<button type="button" class="close" data-dismiss="modal" aria-label="Close">
+											<span aria-hidden="true">&times;</span>
+										</button>
+									</div>
+									<div class="modal-body">
+
+
+										<table class="table">
+											<thead class="thead-dark">
+												<tr >
+
+													<th scope="col" style="color: white">ACCOUNT</th>
+													<th scope="col" style="color: white">AMOUNT</th>
+
+												</tr>
+											</thead>
+											<tbody>
+												@foreach($ticket->ticket_multiple_settlements as $settle)
+												<tr>
+
+													<td>{{$settle->account}}</td>
+													<td>{{$settle->amount}}</td>
+
+												</tr>
+												@endforeach
+
+
+											</tbody>
+										</table>
+
+									</div>
+									<div class="modal-footer">
+										<button type="button" class="btn btn-secondary" data-dismiss="modal">Close</button>
+
+									</div>
+								</div>
+							</div>
+						</div>
+
+
+					</td>
+				
+                  <td>{{$ticket->id}}</td>
+                  <td>{{$ticket->transaction_type->name}}</td>
+                  <td>{{$ticket->customer_name}}</td>
+                  <td>{{$ticket->status->name}}</td>
+                </tr>
+                @endforeach
+
+              </tbody>
+            </table>
+            <!--end: Datatable-->
+          </div>
+        </div>
+        <!--end::Card-->
+      </div>
+    <!--end::Container-->
+  </div>
+<!--end::Entry-->
+
+
+@endsection

@@ -14,4 +14,5 @@ class user_group extends Model
        
     ];
     use HasFactory;
+	 
 }

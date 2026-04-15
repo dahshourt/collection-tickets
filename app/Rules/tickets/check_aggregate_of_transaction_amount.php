@@ -28,21 +28,24 @@ class check_aggregate_of_transaction_amount implements Rule
     {
      
         
-
+		 
         $transaction_amount = request()->input("transaction_amount");
         $aggregate = 0;
+		$transaction_amount = str_replace(',', '', $transaction_amount);
+		
         foreach((array) $values as $value)
         {
-            $aggregate =  $aggregate + $value ;
+			$value = str_replace(',', '', $value);
+			$aggregate =  $aggregate + $value ;
         } 
-        
+       // dd($aggregate);
          if($aggregate  > $transaction_amount ) 
          {
              return false;
          }elseif($aggregate  < $transaction_amount)
          {
              return false;
-         }elseif($aggregate  = $transaction_amount)
+         }elseif($aggregate  == $transaction_amount)
          {
              return true;
          }

@@ -20,6 +20,23 @@
                     
                     {{ csrf_field() }}
                     @include("$view.edit_form")
+					<!--<select class="form-select form-select-solid" data-control="select2" data-placeholder="Select an option" data-allow-clear="true" multiple="multiple">
+    <option></option>
+    <option value="1">Option 1</option>
+    <option value="2">Option 2</option>
+</select>
+
+<select class="form-select form-select-sm form-select-solid" data-control="select2" data-placeholder="Select an option" data-allow-clear="true" multiple="multiple">
+    <option></option>
+    <option value="1">Option 1</option>
+    <option value="2">Option 2</option>
+</select>
+
+<select class="form-select form-select-lg form-select-solid" data-control="select2" data-placeholder="Select an option" data-allow-clear="true" multiple="multiple">
+    <option></option>
+    <option value="1">Option 1</option>
+    <option value="2">Option 2</option>
+</select>-->
                    <div class="card-footer">
                       <button type="submit" class="btn btn-primary mr-2">Submit</button>
                       <a href="{{route('users.index')}}" type="reset" class="btn btn-secondary">Cancel</a>
@@ -41,3 +58,12 @@
 
 
 @endsection
+@push('page_script')
+<script>
+$(document).ready(function(){
+		$('#framework').select2({
+			multiple:true
+		});
+});
+</script>
+@endpush

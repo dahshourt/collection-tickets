@@ -13,8 +13,8 @@
                             </div>
                         </div>
                     @endif
-                    
-                 
+
+
                         <div class="row justify-content-center">
                             <div class="col-xl-9">
                                 <!--begin::Wizard Step 1-->
@@ -25,9 +25,9 @@
                                         <label class="col-xl-3 col-lg-3 col-form-label">user Name</label>
                                         <div class="col-lg-9 col-xl-9">
                                             <input class="form-control form-control-solid form-control-lg" name="user_name" type="text" value="{{$user->user_name}}" required>
-                                            
-                                            
-                                          
+
+
+
                                         <div class="fv-plugins-message-container"></div></div>
                                     </div>
                                     <!--end::Group-->
@@ -46,7 +46,7 @@
                                             <input class="form-control form-control-solid form-control-lg" name="last_name" type="text" value="{{$user->last_name}}"  required>
                                         <div class="fv-plugins-message-container"></div></div>
                                     </div>  --}}
-                                  
+
                                     <!--begin::Group-->
                                     <div class="form-group row fv-plugins-icon-container">
                                         <label class="col-xl-3 col-lg-3 col-form-label">Email Address</label>
@@ -81,7 +81,7 @@
                                                 </div>
                                                 <input type="number" class="form-control form-control-solid form-control-lg" name="phone" value="{{$user->phone}}" placeholder="Phone">
                                             </div>
-                                           
+
                                         <div class="fv-plugins-message-container"></div></div>
                                     </div>
 
@@ -91,27 +91,34 @@
                                         <label class="col-xl-3 col-lg-3 col-form-label">select group</label>
                                         <div class="col-lg-9 col-xl-9">
                                             <div class="input-group input-group-solid input-group-lg">
-                                                
-                                                <select id="framework" name="groups[]" multiple class="form-control" >
+
+                                                <select multiple id="e1" name="groups[]"  class="form-control" >
                                                     @foreach ($groups as $group)
                                                     <option value="{{ $group->id }}"
-                                                    {{  in_array($group->id, $user->UserGroups->pluck('group_id')->toArray()) ? "selected" :"" }}    
+                                                    {{  in_array($group->id, $user->UserGroups->pluck('group_id')->toArray()) ? "selected" :"" }}
                                                     >
 
                                                         {{ $group->name }}
                                                     </option>
-                                                   
-                                                  
+
+
                                                     @endforeach
-                                                   
-                                                   
+
+
                                                    </select>
                                             </div>
-                                           
+
                                         <div class="fv-plugins-message-container"></div></div>
                                     </div>
+<div class="form-group row fv-plugins-icon-container">
+                    <label  class="col-xl-3 col-lg-3 col-form-label" for="role">Role: </label>
+                    <select  class="col-lg-9 col-xl-9" name="role" id="role" >
+                        <option value="1" {{($user->role==1)?'selected':''}} >admin</option>
+                        <option value="2" {{($user->role==2)?'selected':''}}>user</option>
 
-                                    
+                    </select>
+                </div>
+
 
                                     <div class="form-group">
                                         <div class="checkbox-list">
@@ -123,14 +130,14 @@
 
 
 
-                                    
-                                     
+
+
                                 </div>
-                                
+
                             </div>
                         </div>
                     <div></div><div></div><div></div>
 
-   
-  
+
+
 </div>

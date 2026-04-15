@@ -1,0 +1,423 @@
+<?php
+
+namespace App\Http\Controllers\Tickets;
+
+use App\Http\Controllers\Controller;
+use App\Factories\Tickets\TicketsFactory;
+use Illuminate\Foundation\Validation\ValidatesRequests;
+use App\Http\Requests\Tickets\create_tickets;
+use App\Http\Requests\Tickets\update_tickets;
+use App\Http\Requests\test;
+use Illuminate\Support\Facades\Validator;
+use Illuminate\Http\Request;
+use App\Rules\tickets\check_aggregate_of_transaction_amount;
+use App\traits\store_files_trait;
+use Illuminate\Support\Facades\Response;
+use Excel;
+use App\Exports\ExportListTickets;
+use Illuminate\Support\Facades\Redirect;
+use Illuminate\Validation\Rule;
+
+use App\Models\TransactionWorkflow;
+
+class Tickets_controller extends Controller
+{
+
+    use store_files_trait;
+    use ValidatesRequests;
+    private $model;
+
+    function __construct(TicketsFactory $TicketsFactory)
+    {
+       
+        $this->middleware('auth');
+        $this->model = $TicketsFactory::index();
+        $this->view = 'Tickets';
+        $view = 'tickets';
+        $route = 'tickets';
+        $title = 'Create Ticket';
+        $form_title = 'tickets';
+        view()->share(compact('view', 'route', 'title', 'form_title'));
+    }
+
+    /**
+     * Display a listing of the resource.
+     *
+     * @return \Illuminate\Http\Response
+     */
+    public function index()
+    {
+        
+        
+        //
+        $collection = $this->model->index();
+        //$workflow = $this->model->getWorkflow(8,2,4);
+        $statuses = $this->model->getAllStatus();
+        $banks = $this->model->get_all_receiver_banks();
+        $groups = $this->model->getAllPool();
+        $marketSegments = $this->model->get_all_market_segments();
+        $customerTypes = $this->model->get_all_customer_type();
+        $transactionTypes  = $this->model->get_all_transaction_types();
+        $workflow = $this->model->CashOperationWorkFlowStatus();
+        $title = 'Tickets';
+        return view('tickets.index', compact('collection', 'title', 'workflow', 'statuses', 'banks', 'groups','marketSegments','customerTypes', 'transactionTypes'));
+    }
+
+    /**
+     * List the Tickets created from my Side
+     *
+     * @return \Illuminate\Http\Response
+     */
+
+    public function myTickets()
+    {
+
+
+
+        $userId = auth()->user()->id;
+        $collection = $this->model->index();
+
+        $listMyTickets = $this->model->listAllMyTickets($userId);
+        //dd($listMyTickets);
+        $title = 'My Tickets';
+        return view('tickets.myTickets.index', compact('collection', 'title', 'listMyTickets'));
+    }
+    public function export_tickets()
+    {
+        $collection = $this->model->export_list_tickets();
+        //$workflow = $this->model->getWorkflow(8,2,4);
+        $data = array();
+        foreach ($collection as $ticket) {
+
+            $data[] = array(
+                $ticket->id,
+                preg_replace('/[^a-zA-Z0-9_ %\[\]\.\(\)%&-]/s', '', $ticket->customer_name),
+                $ticket->account,
+                $ticket->customer_type->name,
+                $ticket->bank->name,
+                $ticket->transaction_amount,
+                $ticket->market_segment->name,
+                $ticket->transaction_type->name,
+                $ticket->status->name,
+                $ticket->group->name,
+                $ticket->cheque_number
+
+            );
+        }
+
+        return Excel::download(new ExportListTickets($data), 'List_Tickets.xlsx');
+    }
+
+    /**
+     * Show the form for creating a new resource.
+     *
+     * @return \Illuminate\Http\Response
+     */
+    public function create()
+    {
+        $creator_group = [1, 10];
+        $user_groups = auth()->user()->UserGroups->pluck('group_id')->toArray();
+        $result = array_intersect($creator_group, $user_groups);
+        $creator_group_data = $this->model->GetCreatorGroup($result);
+
+        $status = $this->model->get_status();
+        $market_segment = $this->model->get_all_market_segments();
+        $receiver_banks = $this->model->get_all_receiver_banks();
+        $transaction_types = $this->model->get_all_transaction_types();
+        $get_all_customer_type = $this->model->get_all_customer_type();
+        $groups = $this->model->get_group();
+        $workflow = $this->model->getWorkflow(1, 1);
+        $now = now();
+
+        return view('tickets.create_ticket', compact(
+            'status',
+            'market_segment',
+            'receiver_banks',
+            'transaction_types',
+            'get_all_customer_type',
+            'groups',
+            'workflow',
+            'now',
+            'creator_group_data'
+        ));
+    }
+
+    /**
+     * Store a newly created resource in storage.
+     *
+     * @param  \Illuminate\Http\Request  $request
+     * @return \Illuminate\Http\Response
+     */
+    public function store(create_tickets $request)
+    {
+
+        $check_workflow = $this->model->Creation_CheckWorkFlow();
+        if (!$check_workflow) {
+            // dd("g");
+            return redirect()->back()->with('failed', 'Something went wrong. group or status is inccorect');
+        }
+        //$settlement_and_its_account = [] ;
+
+        if ($request->input('settlement')) {
+
+            //$settlement_and_its_account = array_combine($request->input('settlement'),  $request->input('settlement_accounts'));
+
+            //dd($request->input('settlement'),  $request->input('settlement_accounts'),$settlement_and_its_account);
+
+            $validator = validator::make($request->all(), ['settlement' => [new check_aggregate_of_transaction_amount], 'settlement_accounts' => 'required']);
+            if ($validator->fails()) {
+                return back()->withInput($request->only('customer_name', 'cheque_number', 'group_id', 'customer_type_id', 'market_segment_id', 'status_id', 'transaction_type_id', 'transaction_amount', 'receiver_bank_id', 'bank_transaction_date', 'description', 'settlement', 'account', 'settlement_accounts'))->withErrors($validator);
+            }
+        }
+        $files_path =  $this->upload_multible_files($request, '/uploads');
+        if (isset($request->bank_transaction_date)) {
+            $request->merge([
+                'bank_transaction_date' => date('Y-m-d', strtotime($request->bank_transaction_date)),
+            ]);
+        }
+        //dd($request->all());
+        $ticket_id =  $this->model->create_ticket($request);
+        $this->model->add_files($ticket_id->id, $files_path);
+
+        if ($request->input('settlement')) {
+            $this->model->ticket_multiple_settlements($ticket_id->id, $request->input('settlement'), $request->input('settlement_accounts'));
+        }
+        return redirect('/tickets')->with('status', "Ticket No #$ticket_id->id Created Successfully");
+    }
+
+    /**
+     * Display the specified resource.
+     *
+     * @param  int  $id
+     * @return \Illuminate\Http\Response
+     */
+    public function show($id)
+    {
+
+        $submit_disable = '';
+        $user_groups = auth()->user()->UserGroups->pluck('group_id')->toArray();
+
+        $title = "Update Ticket";
+        $disabled = "disabled";
+        $disabled_status_group = "";
+        $ticket_data = $this->model->get_ticket_data($id);
+
+        if (!$ticket_data) {
+            return redirect('/tickets')->with('failed', 'Ticket Not Exists');
+        }
+        $status = $this->model->get_status_workflow($ticket_data->group_id);
+        $groups = $this->model->get_group_workflow($ticket_data->group_id);
+        $transaction_types = $this->model->get_all_transaction_types();
+        $get_all_customer_type = $this->model->get_all_customer_type();
+        $market_segment = $this->model->get_all_market_segments();
+        $receiver_banks = $this->model->get_all_receiver_banks();
+        $RejectionReasons = $this->model->getRejectionReasons();
+
+        $workflow = $this->model->getWorkflowNew($ticket_data);
+
+        if ($ticket_data->group_id == 1 || $ticket_data->group_id == 10) {
+            if ($ticket_data->status_id == 4 || $ticket_data->status_id == 6) {
+                $disabled = "";
+            } elseif ($ticket_data->status_id == 9 || $ticket_data->status_id == 11) {
+                $disabled_status_group = "disabled";
+            }
+        }
+        if (isset($_GET['myticket']) and   !in_array($ticket_data->group_id, $user_groups)) {
+            $disabled_status_group = "disabled";
+            $submit_disable = "disabled";
+        }
+
+
+        return view('tickets.show_ticket', compact(
+            'ticket_data',
+            'title',
+            'transaction_types',
+            'get_all_customer_type',
+            'market_segment',
+            'receiver_banks',
+            'status',
+            'workflow',
+            'disabled',
+            'groups',
+            'RejectionReasons',
+            'disabled_status_group',
+            'submit_disable'
+
+        ));
+    }
+
+
+    public function getDownload($id)
+    {
+
+        $get_files_for_download = $this->model->get_files_for_download($id);
+
+        $file = public_path() . "/uploads/" . $get_files_for_download[0]->file_path;
+        $exten = $get_files_for_download[0]->file_path;
+        $exten = explode('.', $exten);
+        $headers = array(
+            'Content-Type: application/' . $exten[1],
+        );
+
+        return Response::download($file, $get_files_for_download[0]->file_path, $headers);
+    }
+
+    /**
+     * Show the form for editing the specified resource.
+     *
+     * @param  int  $id
+     * @return \Illuminate\Http\Response
+     */
+    public function edit($id)
+    {
+        //
+    }
+
+    /**
+     * Update the specified resource in storage.
+     *
+     * @param  \Illuminate\Http\Request  $request
+     * @param  int  $id
+     * @return \Illuminate\Http\Response
+     */
+    public function update(update_tickets $request, $id)
+    {
+        
+        if($request->has('settlement')){
+                unset($request['settlement']);
+        }
+        //dd($request);
+        $ticket_data = $this->model->get_ticket_data($id);
+        $check_workflow = $this->model->CheckWorkFlow($ticket_data);
+        if (!$check_workflow) {
+            return redirect()->back()->with('failed', 'Something went wrong. group or status is inccorect');
+        }
+        // $settlement_and_its_account = [] ;
+        // if($request->input('settlement'))
+        // {
+        //$settlement_and_its_account = array_combine($request->input('settlement'),  $request->input('account'));
+
+        // $validator = validator::make($request->all(), [ 'settlement' => [new check_aggregate_of_transaction_amount], 'settlement_accounts' => 'required' ]);
+        // if($validator->fails())
+        // {
+        // return back()->withInput($request->only('customer_name', 'cheque_number', 'group_id', 'customer_type_id', 'market_segment_id', 'status_id', 'transaction_type_id', 'transaction_amount', 'receiver_bank_id', 'bank_transaction_date', 'description'))->withErrors($validator);
+        // }
+        // }
+
+
+        if (isset($request->bank_transaction_date)) {
+            $request->merge([
+                'bank_transaction_date' => date('Y-m-d', strtotime($request->bank_transaction_date)),
+            ]);
+        }
+
+        $ticket_id =  $this->model->update_ticket($request, $id);
+
+        if ($request->file_input) {
+            $files_path =  $this->upload_multible_files($request, '/uploads');
+            $this->model->add_files($id, $files_path);
+        }
+        $this->model->addToLogEntry($id, $request);
+        $this->model->ticket_multiple_settlements_update($id, $request);
+        return redirect('/tickets')->with('status', 'Updated Successfully');
+        //return redirect()->back();
+
+
+    }
+
+    /**
+     * Remove the specified resource from storage.
+     *
+     * @param  int  $id
+     * @return \Illuminate\Http\Response
+     */
+    public function destroy($id)
+    {
+        //
+    }
+
+
+
+
+    public function BulkUpdate(Request $request)
+    {
+
+        $validator = Validator::make($request->all(), [
+            'ids'                         => 'required|array',
+            'ids.*'                     => 'integer',
+            'status_id'                 => 'required',
+            'file_input.*' => 'mimes:png,pdf,docx,doc,xlsx,xls,csv,txt'
+        ]);
+        if ($validator->fails()) {
+            return redirect()->back()->withInput($request->input())->withErrors($validator);
+        }
+        $files_path = null;
+        if ($request->file_input) {
+            $files_path =  $this->upload_multible_files($request, '/uploads');
+        }
+        foreach ($request->ids as $key => $value) {
+
+            $ticket_data = $this->model->get_ticket_data($value);
+
+            $transfer_group = $this->model->getTransferGroup($ticket_data->creator_group_id, $request->status_id, $ticket_data->group_id, $ticket_data->status_id, $ticket_data->previous_group_id, $ticket_data->transaction_type_id);
+            if ($transfer_group) {
+                $update_arr = array(
+                    "previous_user_id"         => $ticket_data->user_action_id,
+                    "previous_status_id"     => $ticket_data->status_id,
+                    "previous_group_id"     => $ticket_data->group_id,
+                    "status_id"             => $request->status_id,
+                    "group_id"                 => $transfer_group->transfer_group,
+                    //"add_on_oracle_date"    => $request->add_on_oracle_date?$request->add_on_oracle_date: '',
+                    "add_on_oracle"         => $request->add_on_oracle ? $request->add_on_oracle : '0',
+                    'user_action_id'         => auth()->user()->id
+                );
+                if ($request->add_on_oracle_date) {
+                    $update_arr['add_on_oracle_date'] = $request->add_on_oracle_date;
+                }
+
+                $this->model->updateBulk($value, $update_arr);
+
+                if ($files_path) {
+                    $this->model->add_files($value, $files_path);
+                }
+            } else {
+                return redirect()->back()->with('error', 'Something went wrong!');
+            }
+        }
+
+        return redirect('/tickets')->with('status', 'Updated Successfully');
+    }
+
+
+    public function TransactionWorkflow(Request $request)
+    {
+        if ($request->ajax()) {
+            $workflow = $this->model->getTransferGroupStatus();
+            return view("tickets.group_status", compact('workflow'));
+        }
+    }
+
+    public function WorkflowStatusGroup(Request $request)
+    {
+        if ($request->ajax()) {
+            $creator_group_id = $request->creator_group_id;
+            $transfer_status = $request->transfer_status;
+            $current_group = $request->current_group;
+            $current_status = $request->current_status;
+            $previous_group_id = $request->previous_group_id;
+            $transaction_type_id = $request->transaction_type_id;
+
+            $transfer_group = $this->model->getTransferGroup($creator_group_id, $transfer_status, $current_group, $current_status, $previous_group_id, $transaction_type_id);
+            //$transfer_group = $this->model->getTransferGroup($request);
+
+            return view("tickets.transfer_group", compact('transfer_group'));
+        }
+    }
+    public function ticket_logs($id)
+    {
+         $logs= $this->model->display_ticket_logs($id);
+         $title = "logs";
+        return view("tickets.ticket_logs",compact('logs','title'));
+
+    }
+}

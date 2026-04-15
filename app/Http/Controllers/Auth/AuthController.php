@@ -3,12 +3,13 @@
 namespace App\Http\Controllers\Auth;
 
 use App\Http\Controllers\Controller;
+use App\Models\User;
 use Illuminate\Foundation\Validation\ValidatesRequests;
 use Illuminate\Http\Request;
 use Session;
 use Adldap\Laravel\Facades\Adldap;
 use Illuminate\Support\Facades\Auth;
-use App\Models\User;
+
 
 class AuthController extends Controller
 {
@@ -22,106 +23,61 @@ class AuthController extends Controller
     public function index()
     {
         return view('auth.login');
-    }  
-      
+    }
+
     public function Login(Request $request)
     {
-
-        
         $request->validate([
             'user_name' => 'required',
             'password' => 'required',
         ]);
-   
-        $credentials = $request->only('user_name', 'password');
-        $user_attemp = Auth::attempt($credentials);
-        if(!$user_attemp)
-				{
-					$user = new User;
-					$user->user_name = $request->user_name;
-					$user->email = $request->user_name."@te.eg";
-					$user->password = $request->password;
-					$user->first_name = $request->user_name;
-					$user->last_name = $request->user_name;
-					$user->active = 1;
-					$user->save();
-					Auth::login($user);
-                    return redirect(url('/'));
-				}
-				else
-				{
-					$user =  auth()->guard('user')->attempt(['user_name' => $request->user_name, 'password' => $request->password ]);
-					return redirect(url('/'));
-				}
-        // $ldapUser = Adldap::search()->users()->find($request->user_name);
-		// if($ldapUser)
-		// {
-		// 	$username = $ldapUser->getUserPrincipalName();
-		// 	$user = Adldap::auth()->attempt($username,$request->password);
-			
-		// 	if($user)
-		// 	{
-		// 		if(!$user_attemp)
-		// 		{
-		// 			$user = new User;
-		// 			$user->user_name = $request->user_name;
-		// 			$user->email = $request->user_name."@te.eg";
-		// 			$user->password = $request->password;
-		// 			$user->first_name = $ldapUser->getCommonName();
-		// 			$user->last_name = $ldapUser->getCommonName();
-		// 			$user->objectguid = $ldapUser->getConvertedGuid();
-		// 			$user->active = 1;
-		// 			$user->save();
-		// 			Auth::login($user);
-		// 			return redirect(url('/'));
-		// 		}
-		// 		else
-		// 		{
-		// 			$user =  auth()->guard('user')->attempt(['user_name' => $request->user_name, 'password' => $request->password ]);
-		// 			return redirect(url('/'));
-		// 		}
-		// 	}
-		// 	else
-		// 	{
-		// 		return \Redirect::back()->withErrors([ 'msg'=> "username or password is incorrect."])->withInput();
-		// 	}
-		// }
-		// else
-		// {
-		// 	if(!$user_attemp)
-		// 		{
-		// 			$user = new User;
-		// 			$user->user_name = $request->user_name;
-		// 			$user->email = $request->user_name."@te.eg";
-		// 			$user->password = $request->password;
-		// 			$user->first_name = $request->user_name;
-		// 			$user->last_name = $request->user_name;
-		// 			$user->active = 1;
-		// 			$user->save();
-		// 			Auth::login($user);
-		// 			return redirect(url('/'));
-		// 		}
-		// 		else
-		// 		{
-		// 			$user =  auth()->guard('user')->attempt(['user_name' => $request->user_name, 'password' => $request->password ]);
-		// 			return redirect(url('/'));
-		// 		}
-		// }
-		
-        // if (Auth::attempt($credentials)) {
-        //     $user = Auth::user();
-        //     dd($user);
-        //     return redirect(url('/'));
-        // }
-  
-        // return \Redirect::back()->withErrors([ 'msg'=> "username or password is incorrect."])->withInput();
+    
+        $username = $request->user_name;
+        $password = $request->password;
+    
+        $ldapbind = false;
+    
+        // --- Try Cairo LDAP first ---
+        $ldapconn = @ldap_connect(config('constants.cairo.ldap_host'));
+        if ($ldapconn) {
+            $ldap_binddn = config('constants.cairo.ldap_binddn') . $username;
+            $ldapbind = @ldap_bind($ldapconn, $ldap_binddn, $password);
+        }
+    
+        // --- If Cairo fails, try Egypt LDAP ---
+        if (!$ldapbind) {
+            $ldapconn = @ldap_connect(config('constants.egypt.ldap_host'));
+            if ($ldapconn) {
+                $ldap_binddn = config('constants.egypt.ldap_binddn') . $username;
+                $ldapbind = @ldap_bind($ldapconn, $ldap_binddn, $password);
+            }
+        }
+    
+        // --- If both Cairo & Egypt fail ---
+        if (!$ldapbind) {
+            return back()
+                ->withErrors(['msg' => "Username or Password not correct in LDAP."])
+                ->withInput();
+        }
+    
+        // --- Check user in local DB ---
+        $user = User::where('user_name', $username)->first();
+        if (!$user) {
+            return back()
+                ->withErrors(['msg' => "User does not exist in system."])
+                ->withInput();
+        }
+    
+        // --- Login user into Laravel ---
+        Auth::login($user);
+        return redirect(url('/'));
     }
-
-    public function signOut() {
+    
+    public function signOut()
+    {
         Session::flush();
         Auth::logout();
         return Redirect('login');
     }
-
 
 }

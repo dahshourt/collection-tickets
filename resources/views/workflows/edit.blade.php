@@ -1,0 +1,45 @@
+@extends('layouts.master',['title' => $title ])
+
+@section('content')
+
+
+
+<div class="d-flex flex-column-fluid">
+    <!--begin::Container-->
+    <div class="container">
+       <div class="row">
+          <div class="col-lg-12">
+             <!--begin::Card-->
+             <div class="card card-custom gutter-b example example-compact">
+                <div class="card-header">
+                   <h3 class="card-title">Edit {{ $form_title }} | {{ $row->name }}</h3>
+                  
+                </div>
+                <!--begin::Form-->
+                <form class="m-form" action="{{url('/'.$route)}}/{{ $row->id }}" method="post" enctype="multipart/form-data">
+                    
+                    {{ csrf_field() }}
+                    {{ method_field('PATCH') }}
+                    <input type="hidden" name="id" value="{{$row->id}}">
+                    @include("$view.form")
+                   <div class="card-footer">
+                      <button type="submit" class="btn btn-primary mr-2">Submit</button>
+                      <button type="reset" class="btn btn-secondary">Cancel</button>
+                   </div>
+                </form>
+                <!--end::Form-->
+             </div>
+             <!--end::Card-->
+             <!--begin::Card-->
+             
+             <!--end::Card-->
+          </div>
+          
+       </div>
+    </div>
+    <!--end::Container-->
+ </div>
+
+
+
+@endsection

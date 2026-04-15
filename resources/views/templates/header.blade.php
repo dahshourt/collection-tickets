@@ -5,7 +5,7 @@
 	<!--begin::Head-->
 	<head><base href="">
 		<meta charset="utf-8" />
-		<title>Bank Transfer Tickets</title>
+		<title>Collection Tickets</title>
 		<meta name="description" content="Updates and statistics" />
 		<meta name="csrf-token" content="{{ csrf_token() }}">
 		<meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no" />
@@ -18,7 +18,6 @@
 		<!--end::Global Theme Styles-->
 		<!--begin::Layout Themes(used by all pages)-->
 		<!--end::Layout Themes-->
-		<link rel="shortcut icon" href="assets/media/logos/favicon.ico" />
 		<link href="{{ asset('public/new_design/assets/plugins/custom/datatables/datatables.bundle.css')}}" rel="stylesheet" type="text/css" />
 		<!--end::Page Vendors Styles-->
 		<!--begin::Page Vendors Styles(used by this page)-->
@@ -32,7 +31,11 @@
 		<!--begin::Layout Themes(used by all pages)-->
 		<!--end::Layout Themes-->
 
+
 		<link rel="shortcut icon" href="{{ asset('public/new_design/assets/media/logos/favicon.ico')}}" />
+		<link rel="stylesheet" type="text/css" media="all" href="{{ asset('public/jquery-ui.css')}}"    />
+		<link href="assets/plugins/global/plugins.bundle.css" rel="stylesheet" type="text/css"/>
+<script src="assets/plugins/global/plugins.bundle.js"></script>
 		<style>
 			.form-control-feedback
 			{
@@ -42,6 +45,22 @@
 			{
 				content: unset !important;
 			}
+			.add_on_oracle
+			{
+				display:none;
+			}
+			.form-control[readonly] {
+				color: #7E8299 !important;
+				background-color: #EBEDF3 !important;
+			}
+			.odd .sorting_1 .checkbox > span
+			{
+				background-color: #ffff !important;
+			}
+			.odd .sorting_1 .checkbox > input:checked ~ span {
+				background-color: #1BC5BD !important;
+			}
+			
 		</style>
 	</head>
 	<!--end::Head-->

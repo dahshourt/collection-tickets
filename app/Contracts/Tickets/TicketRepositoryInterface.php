@@ -16,6 +16,8 @@ interface TicketRepositoryInterface
     
 
     public function get_group();
+	
+	public function index();
 
     
 

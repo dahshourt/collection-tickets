@@ -16,7 +16,7 @@ return [
     |
     */
 
-    'logging' => env('LDAP_LOGGING', true),
+    'logging' => env('LDAP_LOGGING', false),
 
     /*
     |--------------------------------------------------------------------------
@@ -167,7 +167,7 @@ return [
                 |
                 */
 
-                'timeout' => env('LDAP_TIMEOUT', 10),
+                'timeout' => env('LDAP_TIMEOUT', 5),
 
                 /*
                 |--------------------------------------------------------------------------

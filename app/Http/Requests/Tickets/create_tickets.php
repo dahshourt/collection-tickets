@@ -26,24 +26,26 @@ class create_tickets extends FormRequest
      */
     public function rules()
     {
-        $cheque_number_rules= '';
+       $cheque_number_rules= '';
         if(request()->input("transaction_type") == 3 ){
             $cheque_number_rules = "required|numeric";
         }
 
         return [
-            'accounts' => 'required|numeric',
+            'account' => 'required|alpha_num',
             'customer_name' => 'required|string',
             'cheque_number' =>  $cheque_number_rules,
-            'group' => ['required', 'numeric', new check_right_group_create_ticket],
-            'customer_type' => 'required|numeric',
-            'market_segment' => 'required|numeric',
-            'status' => ['required', 'numeric', new check_right_status_create_ticket],
-            'transaction_type' => 'required|numeric',
-            'transaction_amount' => 'required|numeric',
-            'reciver_banck' => 'required|numeric',
-            'banck_transaction_date' => 'required|date',
-            'file_input.*' => 'mimes:png,pdf,docx'
+            //'group_id' => ['required', 'numeric', new check_right_group_create_ticket],
+			'group_id' => ['required', 'numeric'],
+            'customer_type_id' => 'required|numeric',
+            'market_segment_id' => 'required|numeric',
+            //'status_id' => ['required', 'numeric', new check_right_status_create_ticket],
+			'status_id' => ['required', 'numeric'],
+            'transaction_type_id' => 'required|numeric',
+            'transaction_amount' => 'required|between:0,99.99',
+            'receiver_bank_id' => 'required|numeric',
+            'bank_transaction_date' => 'required|date',
+            'file_input.*' => 'mimes:png,pdf,docx,doc,xlsx,xls,csv,txt'
         ];
     }
 }

@@ -1,209 +1,449 @@
 <?php
 
 namespace App\Http\Controllers\Tickets;
+
 use App\Http\Controllers\Controller;
-use App\Factories\Tickets\TicketsFactory;
+use App\traits\LogsActivity;
+use App\Models\ticket;
 use Illuminate\Foundation\Validation\ValidatesRequests;
-use App\Http\Requests\Tickets\create_tickets;
-use App\Http\Requests\Tickets\update_tickets;
-use App\Http\Requests\test;
-use Illuminate\Support\Facades\Validator;
 use Illuminate\Http\Request;
-use App\Rules\tickets\check_aggregate_of_transaction_amount;
-use App\traits\store_files_trait;
-use Illuminate\Support\Facades\Response;
- 
+use Auth;
+use DB;
+
 class Tickets_controller extends Controller
 {
+    use ValidatesRequests, LogsActivity;
 
-    use store_files_trait;
-    use ValidatesRequests;
     private $model;
 
-    function __construct(TicketsFactory $TicketsFactory){
-        $this->middleware('auth');
-        $this->model = $TicketsFactory::index();
-        $this->view = 'Tickets';
-        $view = 'Tickets';
-        $route = 'tickets';
-        $title = 'Create Ticket';
-        $form_title = 'tickets';
-        view()->share(compact('view','route','title','form_title'));
-        
-    } 
-
-    /**
-     * Display a listing of the resource.
-     *
-     * @return \Illuminate\Http\Response
-     */
-    public function index()
+    function __construct(\App\Factories\Tickets\TicketsFactory $Ticket)
     {
-        //
+        $this->model = $Ticket::index();
+
+        $view       = 'tickets';
+        $route      = 'tickets';
+        $title      = 'Tickets';
+        $form_title = 'Ticket';
+        view()->share(compact('view', 'route', 'title', 'form_title'));
     }
 
-    /**
-     * Show the form for creating a new resource.
-     *
-     * @return \Illuminate\Http\Response
-     */
-    public function create()
-    {
-        $status = $this->model->get_status();
-        $market_segment = $this->model->get_all_market_segments();
-        $receiver_banks = $this->model->get_all_receiver_banks();
-        $transaction_types = $this->model->get_all_transaction_types();
-        $get_all_customer_type = $this->model->get_all_customer_type();
-        $groups = $this->model->get_group();
-        $now = now();
-         
-        return view('tickets.create_ticket',compact(
-            'status',
-            'market_segment',
-            'receiver_banks',
-            'transaction_types',
-            'get_all_customer_type',
-            'groups',
-            'now'
-         ));
-    }
+    // ─────────────────────────────────────────────────────────────────────────
+    // INDEX — also handles search (searchCriteria in request)
+    // ─────────────────────────────────────────────────────────────────────────
 
-    /**
-     * Store a newly created resource in storage.
-     *
-     * @param  \Illuminate\Http\Request  $request
-     * @return \Illuminate\Http\Response
-     */
-    public function store(create_tickets $request)
+    public function index(Request $request)
     {
-        
-        $settlement_and_its_account = [] ;
-        if($request->input('settlement'))
-        {
-             
-            $settlement_and_its_account = array_combine($request->input('settlement'),  $request->input('account'));
-            
-            $validator = validator::make($request->all(), [ 'settlement' => [new check_aggregate_of_transaction_amount], 'account' => 'required' ]);
-            if($validator->fails())
-            {
-                return back()->withInput($request->only('customer_name', 'cheque_number', 'group', 'customer_type', 'market_segment', 'status', 'transaction_type', 'transaction_amount', 'reciver_banck', 'banck_transaction_date', 'short_description','settlement'))->withErrors($validator);
-            }
+        $collection       = $this->model->index();
+        $banks            = DB::table('receiver_banks')->select('id', 'name')->get();
+        $groups           = DB::table('groups')->select('id', 'name')->get();
+        $statuses         = DB::table('statuses')->select('id', 'name')->get();
+        $marketSegments   = DB::table('market_segments')->select('id', 'name')->get();
+        $customerTypes    = DB::table('customer_types')->select('id', 'name')->get();
+        $transactionTypes = DB::table('transaction_types')->select('id', 'name')->get();
+        $workflow         = $this->model->CashOperationWorkFlowStatus();
+
+        // ── Log: Search vs plain View ────────────────────────────────────────
+        if ($request->filled('searchCriteria')) {
+
+            // Build a readable summary of every filter the user applied
+            $filters = array();
+
+            if ($request->filled('bank_name'))
+                $filters[] = 'Bank: ' . $this->_ticketName('receiver_banks', $request->bank_name);
+            if ($request->filled('pool'))
+                $filters[] = 'Pool: ' . $this->_ticketName('groups', $request->pool);
+            if ($request->filled('status'))
+                $filters[] = 'Status: ' . $this->_ticketName('statuses', $request->status);
+            if ($request->filled('market_segmant'))
+                $filters[] = 'Market Segment: ' . $this->_ticketName('market_segments', $request->market_segmant);
+            if ($request->filled('customer_type'))
+                $filters[] = 'Customer Type: ' . $this->_ticketName('customer_types', $request->customer_type);
+            if ($request->filled('transaction_type'))
+                $filters[] = 'Transaction Type: ' . $this->_ticketName('transaction_types', $request->transaction_type);
+            if ($request->filled('customerName'))
+                $filters[] = 'Customer Name: ' . $request->customerName;
+            if ($request->filled('accountNumber'))
+                $filters[] = 'Account: ' . $request->accountNumber;
+            if ($request->filled('chequeNumber'))
+                $filters[] = 'Cheque No: ' . $request->chequeNumber;
+            if ($request->filled('ticketNumber'))
+                $filters[] = 'Ticket No: ' . $request->ticketNumber;
+
+            $filterStr = !empty($filters) ? implode(' | ', $filters) : 'No filters applied';
+            $resultCount = $collection->total();
+
+            $this->writeLog(
+                'Ticket',
+                'Searched tickets | ' . $filterStr . ' | Results: ' . $resultCount,
+                'Search',
+                'Tickets'
+            );
+
+        } else {
+            $this->writeLog('Ticket', 'Viewed tickets list', 'View', 'Tickets');
         }
-       
-       $files_path =  $this->upload_multible_files($request, '/uploads');
-       $ticket_id =  $this->model->create_ticket($request);
-       $this->model->add_files($ticket_id->id, $files_path);
 
-        $this->model->ticket_multiple_settlements($ticket_id->id, $settlement_and_its_account);
-        return redirect()->back()->with('status' , 'Created Successfully' );
-    }
-
-    /**
-     * Display the specified resource.
-     *
-     * @param  int  $id
-     * @return \Illuminate\Http\Response
-     */
-    public function show($id)
-    {
-        
-       $title = "Update Ticket";
-       $ticket_data = $this->model->get_ticket_data($id);
-       $status = $this->model->get_status_workflow($ticket_data->id);
-       $groups = $this->model->get_group_workflow($ticket_data->id);
-    //    dd($this->model->get_group_workflow($ticket_data->id));
-       $transaction_types = $this->model->get_all_transaction_types();
-       $get_all_customer_type = $this->model->get_all_customer_type();
-       $market_segment = $this->model->get_all_market_segments();
-       $receiver_banks = $this->model->get_all_receiver_banks();
-
-        return view('tickets.show_ticket', compact(
-            'ticket_data',
-            'title',
-            'transaction_types',
-            'get_all_customer_type',
-            'market_segment',
-            'receiver_banks',
-            'status',
-            'groups'
-
+        return view('tickets.index', compact(
+            'collection', 'banks', 'groups', 'statuses',
+            'marketSegments', 'customerTypes', 'transactionTypes', 'workflow'
         ));
     }
 
+    // ─────────────────────────────────────────────────────────────────────────
+    // MY TICKETS
+    // ─────────────────────────────────────────────────────────────────────────
 
-    public function getDownload($id)
+    public function myTickets()
     {
-        
-        $get_files_for_download = $this->model->get_files_for_download($id);
-       
-        $file= public_path(). "/uploads/".$get_files_for_download[0]->file_path;
-        $exten = $get_files_for_download[0]->file_path;
-        $exten = explode('.', $exten);
-        $headers = array(
-                  'Content-Type: application/'.$exten[1],
-                );
-    
-        return Response::download($file, $get_files_for_download[0]->file_path, $headers);
+        $collection       = $this->model->listAllMyTickets(Auth::id());
+        $banks            = DB::table('receiver_banks')->select('id', 'name')->get();
+        $groups           = DB::table('groups')->select('id', 'name')->get();
+        $statuses         = DB::table('statuses')->select('id', 'name')->get();
+        $marketSegments   = DB::table('market_segments')->select('id', 'name')->get();
+        $customerTypes    = DB::table('customer_types')->select('id', 'name')->get();
+        $transactionTypes = DB::table('transaction_types')->select('id', 'name')->get();
+        $workflow         = $this->model->CashOperationWorkFlowStatus();
+
+        $this->writeLog(
+            'Ticket',
+            'Viewed My Tickets list | User: ' . Auth::user()->user_name,
+            'View',
+            'Tickets'
+        );
+
+        return view('tickets.index', compact(
+            'collection', 'banks', 'groups', 'statuses',
+            'marketSegments', 'customerTypes', 'transactionTypes', 'workflow'
+        ));
     }
 
-    /**
-     * Show the form for editing the specified resource.
-     *
-     * @param  int  $id
-     * @return \Illuminate\Http\Response
-     */
-    public function edit($id)
+    // ─────────────────────────────────────────────────────────────────────────
+    // CREATE
+    // ─────────────────────────────────────────────────────────────────────────
+
+    public function create()
     {
-        //
+        $statuses          = $this->model->get_status();
+        $groups            = $this->model->get_group();
+        $market_segments   = $this->model->get_all_market_segments();
+        $receiver_banks    = $this->model->get_all_receiver_banks();
+        $transaction_types = $this->model->get_all_transaction_types();
+        $customer_types    = $this->model->get_all_customer_type();
+
+        return view('tickets.create', compact(
+            'statuses', 'groups', 'market_segments',
+            'receiver_banks', 'transaction_types', 'customer_types'
+        ));
     }
 
-    /**
-     * Update the specified resource in storage.
-     *
-     * @param  \Illuminate\Http\Request  $request
-     * @param  int  $id
-     * @return \Illuminate\Http\Response
-     */
-    public function update(update_tickets $request, $id)
-    {
+    // ─────────────────────────────────────────────────────────────────────────
+    // STORE — Create new ticket
+    // ─────────────────────────────────────────────────────────────────────────
 
-        $settlement_and_its_account = [] ;
-        if($request->input('settlement'))
-        {
-           // $settlement_and_its_account = array_combine($request->input('settlement'),  $request->input('account'));
-              
-            $validator = validator::make($request->all(), [ 'settlement' => [new check_aggregate_of_transaction_amount], 'account' => 'required' ]);
-            if($validator->fails())
-            {
-                return back()->withInput($request->only('customer_name', 'cheque_number', 'group', 'customer_type', 'market_segment', 'status', 'transaction_type', 'transaction_amount', 'reciver_banck', 'banck_transaction_date', 'short_description'))->withErrors($validator);
+    public function store(Request $request)
+    {
+        $ticket = $this->model->create_ticket($request);
+
+        // File attachments
+        if ($request->hasFile('file_input')) {
+            $files_path = array();
+            foreach ($request->file('file_input') as $file) {
+                $path = $file->store('ticket_attachments', 'public');
+                $files_path[] = $path;
+            }
+            if (!empty($files_path)) {
+                $this->model->add_files($ticket->id, $files_path);
             }
         }
 
-        
-		
-
-        $ticket_id =  $this->model->update_ticket($request, $id);
-        
-        if($request->file_input)
-        {
-            $files_path =  $this->upload_multible_files($request, '/uploads');
-            $this->model->add_files($id, $files_path);
+        // Multiple settlements
+        if ($request->has('settlement') && $request->settlement) {
+            $this->model->ticket_multiple_settlements(
+                $ticket->id,
+                $request->settlement,
+                $request->settlement_accounts
+            );
         }
-        $this->model->addToLogEntry($id, $request);
-        $this->model->ticket_multiple_settlements_update($id, $request);
-        return redirect()->back()->with('status' , 'Updated Successfully' );
-        
-       
+
+        $statusName  = $this->_ticketName('statuses',          $request->input('status_id'));
+        $groupName   = $this->_ticketName('groups',            $request->input('group_id'));
+        $txTypeName  = $this->_ticketName('transaction_types', $request->input('transaction_type_id'));
+        $bankName    = $this->_ticketName('receiver_banks',    $request->input('receiver_bank_id'));
+        $segmentName = $this->_ticketName('market_segments',   $request->input('market_segment_id'));
+
+        $this->writeLog(
+            'Ticket',
+            'Created new ticket ID: ' . ($ticket ? $ticket->id : 'N/A')
+                . ' | Customer: '         . $request->input('customer_name', 'N/A')
+                . ' | Account: '          . $request->input('account', 'N/A')
+                . ' | Amount: '           . $request->input('transaction_amount', 'N/A')
+                . ' | Transaction Type: ' . $txTypeName
+                . ' | Bank: '             . $bankName
+                . ' | Status: '           . $statusName
+                . ' | Group: '            . $groupName
+                . ' | Market Segment: '   . $segmentName,
+            'Create',
+            'Tickets'
+        );
+
+        return redirect()->route('create_ticket')->with('status', 'Ticket Created Successfully');
     }
 
-    /**
-     * Remove the specified resource from storage.
-     *
-     * @param  int  $id
-     * @return \Illuminate\Http\Response
-     */
-    public function destroy($id)
+    // ─────────────────────────────────────────────────────────────────────────
+    // SHOW — View single ticket details
+    // ─────────────────────────────────────────────────────────────────────────
+
+    public function show($id)
     {
-        //
+        $ticket_data = $this->model->get_ticket_data($id);
+        $workflow    = $this->model->getWorkflow(
+            $ticket_data->group_id,
+            $ticket_data->status_id,
+            $ticket_data->previous_group_id
+        );
+        $rejection_reasons = $this->model->getRejectionReasons();
+
+        $this->writeLog(
+            'Ticket',
+            'Viewed ticket ID: ' . $id
+                . ' | Customer: '      . ($ticket_data->customer_name ?? 'N/A')
+                . ' | Status: '        . $this->_ticketName('statuses', $ticket_data->status_id)
+                . ' | Group: '         . $this->_ticketName('groups', $ticket_data->group_id),
+            'View',
+            'Tickets'
+        );
+
+        return view('tickets.show', compact('ticket_data', 'workflow', 'rejection_reasons'));
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // UPDATE — Update ticket fields, status, group, oracle date, rejection
+    // ─────────────────────────────────────────────────────────────────────────
+
+    public function update(Request $request, $id)
+    {
+        // Capture old values BEFORE update
+        $old       = ticket::find($id);
+        $oldStatus = $old ? $this->_ticketName('statuses', $old->status_id) : 'N/A';
+        $oldGroup  = $old ? $this->_ticketName('groups',   $old->group_id)  : 'N/A';
+
+        $this->model->update_ticket($request, $id);
+        $this->model->ticket_multiple_settlements_update($id, $request);
+        $this->model->addToLogEntry($id, $request);
+
+        // File attachments
+        if ($request->hasFile('file_input')) {
+            $files_path = array();
+            foreach ($request->file('file_input') as $file) {
+                $path = $file->store('ticket_attachments', 'public');
+                $files_path[] = $path;
+            }
+            if (!empty($files_path)) {
+                $this->model->add_files($id, $files_path);
+            }
+        }
+
+        // Build detailed change log comparing old vs new
+        $newStatus = $this->_ticketName('statuses', $request->input('status_id'));
+        $newGroup  = $this->_ticketName('groups',   $request->input('group_id'));
+        $changes   = array();
+
+        if ($old && (string)$old->status_id !== (string)$request->input('status_id'))
+            $changes[] = 'Status: ' . $oldStatus . ' → ' . $newStatus;
+
+        if ($old && (string)$old->group_id !== (string)$request->input('group_id'))
+            $changes[] = 'Group: ' . $oldGroup . ' → ' . $newGroup;
+
+        if ($old && (string)$old->transaction_amount !== (string)$request->input('transaction_amount'))
+            $changes[] = 'Amount: ' . $old->transaction_amount . ' → ' . $request->input('transaction_amount');
+
+        if ($old && $old->customer_name !== $request->input('customer_name'))
+            $changes[] = 'Customer: ' . $old->customer_name . ' → ' . $request->input('customer_name');
+
+        if ($old && $old->account !== $request->input('account'))
+            $changes[] = 'Account: ' . $old->account . ' → ' . $request->input('account');
+
+        if ($request->filled('add_on_oracle_date') && $old && $old->add_on_oracle_date !== $request->input('add_on_oracle_date'))
+            $changes[] = 'Oracle Date: ' . ($old->add_on_oracle_date ?: 'N/A') . ' → ' . $request->input('add_on_oracle_date');
+
+        if ($request->filled('rejection_reason_id')) {
+            $reasonName = $this->_ticketName('rejection_reasons', $request->input('rejection_reason_id'));
+            $changes[] = 'Rejected — Reason: ' . $reasonName;
+        }
+
+        if ($request->filled('log_entry'))
+            $changes[] = 'Note added: ' . $request->input('log_entry');
+
+        if ($request->hasFile('file_input'))
+            $changes[] = 'Files uploaded: ' . count($request->file('file_input'));
+
+        $detail = 'Updated ticket ID: ' . $id;
+        if ($old) { $detail .= ' | Customer: ' . $old->customer_name; }
+        if (!empty($changes)) { $detail .= ' | ' . implode(' | ', $changes); }
+        else { $detail .= ' | No field changes detected'; }
+
+        $this->writeLog('Ticket', $detail, 'Update', 'Tickets');
+
+        return redirect()->back()->with('status', 'Updated Successfully');
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // BULK UPDATE — Change status for multiple tickets at once
+    // ─────────────────────────────────────────────────────────────────────────
+
+    public function BulkUpdate(Request $request)
+    {
+        $ticketIds  = $request->input('ticket_ids', array());
+        $newStatusId = $request->input('status_id');
+
+        foreach ($ticketIds as $id) {
+            $this->model->updateBulk($id, array('status_id' => $newStatusId));
+        }
+
+        $statusName = $this->_ticketName('statuses', $newStatusId);
+
+        $this->writeLog(
+            'Ticket',
+            'Bulk status update | New Status: ' . $statusName
+                . ' | Total tickets: ' . count($ticketIds)
+                . ' | Ticket IDs: ' . implode(', ', $ticketIds),
+            'Update',
+            'Tickets'
+        );
+
+        return redirect()->back()->with('status', 'Bulk Update Successfully');
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // EXPORT TICKETS — Export filtered ticket list to Excel
+    // ─────────────────────────────────────────────────────────────────────────
+
+    public function export_tickets(Request $request)
+    {
+        $tickets = $this->model->export_list_tickets();
+
+        // Build readable filter summary
+        $filters = array();
+        if ($request->filled('bank_name'))
+            $filters[] = 'Bank: ' . $this->_ticketName('receiver_banks', $request->bank_name);
+        if ($request->filled('pool'))
+            $filters[] = 'Pool: ' . $this->_ticketName('groups', $request->pool);
+        if ($request->filled('status'))
+            $filters[] = 'Status: ' . $this->_ticketName('statuses', $request->status);
+        if ($request->filled('market_segmant'))
+            $filters[] = 'Market Segment: ' . $this->_ticketName('market_segments', $request->market_segmant);
+        if ($request->filled('customer_type'))
+            $filters[] = 'Customer Type: ' . $this->_ticketName('customer_types', $request->customer_type);
+        if ($request->filled('transaction_type'))
+            $filters[] = 'Transaction Type: ' . $this->_ticketName('transaction_types', $request->transaction_type);
+        if ($request->filled('customerName'))
+            $filters[] = 'Customer Name: ' . $request->customerName;
+        if ($request->filled('accountNumber'))
+            $filters[] = 'Account: ' . $request->accountNumber;
+        if ($request->filled('chequeNumber'))
+            $filters[] = 'Cheque No: ' . $request->chequeNumber;
+        if ($request->filled('ticketNumber'))
+            $filters[] = 'Ticket No: ' . $request->ticketNumber;
+
+        $filterStr = !empty($filters) ? implode(' | ', $filters) : 'No filters (all tickets)';
+
+        $this->writeLog(
+            'Ticket',
+            'Exported ' . $tickets->count() . ' tickets to Excel | Filters: ' . $filterStr,
+            'Export',
+            'Tickets'
+        );
+
+        // Build Excel data
+        $data = array();
+        foreach ($tickets as $t) {
+            $data[] = array(
+                $t->id,
+                $t->customer_name,
+                $t->account,
+                optional($t->customer_type)->name,
+                optional($t->bank)->name,
+                $t->transaction_amount,
+                optional($t->market_segment)->name,
+                optional($t->transaction_type)->name,
+                optional($t->status)->name,
+                optional($t->group)->name,
+                $t->cheque_number,
+                $t->created_at,
+            );
+        }
+
+        return \Excel::download(new \App\Exports\CMReportExport($data), 'Tickets_Export.xlsx');
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // TICKET LOGS VIEW
+    // ─────────────────────────────────────────────────────────────────────────
+
+    public function ticket_logs($id)
+    {
+        
+        $logs = $this->model->display_ticket_logs($id);
+        $this->writeLog('Ticket', 'Viewed ticket log history for ticket ID: ' . $id, 'View', 'Tickets');
+        return view('tickets.logs', compact('logs'));
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // WORKFLOW HELPERS — read-only AJAX (no log needed)
+    // ─────────────────────────────────────────────────────────────────────────
+
+    public function TransactionWorkflow(Request $request)
+    {
+        $workflow = $this->model->getTransferGroupStatus();
+        return view('tickets.workflow_status_group', compact('workflow'));
+    }
+
+    public function WorkflowStatusGroup(Request $request)
+    {
+        $workflow = $this->model->getTransferGroup(
+            $request->creator_group_id,
+            $request->transfer_status,
+            $request->current_group,
+            $request->current_status,
+            $request->previous_group_id,
+            $request->transaction_type_id
+        );
+        return view('tickets.status_group', compact('workflow'));
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // DOWNLOAD ATTACHMENT
+    // ─────────────────────────────────────────────────────────────────────────
+
+    public function getDownload($id)
+    {
+        $file = $this->model->get_files_for_download($id)->first();
+
+        $this->writeLog(
+            'Ticket',
+            'Downloaded file attachment (ID: ' . $id . ')' . ($file ? ' | File: ' . $file->file_path : ''),
+            'View',
+            'Tickets'
+        );
+
+        return response()->download(storage_path('app/public/' . $file->file_path));
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // PRIVATE — resolve ID to human-readable name from any DB table
+    // ─────────────────────────────────────────────────────────────────────────
+
+    private function _ticketName($table, $id)
+    {
+        if (empty($id)) return 'N/A';
+        try {
+            $row = DB::table($table)->select('name')->where('id', $id)->first();
+            if ($row && isset($row->name)) {
+                return $row->name . ' (ID: ' . $id . ')';
+            }
+        } catch (\Exception $e) {
+            // silent fail — never crash the app because of logging
+        }
+        return (string)$id;
     }
 }

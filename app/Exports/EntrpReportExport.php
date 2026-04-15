@@ -38,15 +38,22 @@ class EntrpReportExport implements FromCollection, WithHeadings
     {
 
         return [
+			'Ticket Number',
             'Ticket creation date',
             'Bank transaction date',
+			'Bank Name',
             'Amount',
             'Account',
-            'Ticket Number',
+            
             'Transaction Type',
             'Customer Name',
             'Ticket Status',
-
+			'Pool',
+			'Market Segment',
+			'Cheque Number',
+			'Added on Oracle Date',
+			'Settlment Account',
+			'Settlment Amount'
         ];
     }
 }
