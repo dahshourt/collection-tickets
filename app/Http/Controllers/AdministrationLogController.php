@@ -113,7 +113,6 @@ class AdministrationLogController extends Controller
             return response()->json(array('html' => $html));
 
         } catch (\Exception $e) {
-            // Return the actual error so we can debug it
             return response()->json(array(
                 'html' => '<div class="alert alert-danger m-3">'
                         . '<strong>Error loading logs:</strong> '
@@ -127,10 +126,6 @@ class AdministrationLogController extends Controller
     // HELPERS
     // ──────────────────────────────────────────────────────────────────────
 
-    /**
-     * Check whether a column exists in a table.
-     * Uses a static cache so it only hits the DB once per column per request.
-     */
     private function columnExists($table, $column)
     {
         static $cache = array();
@@ -145,10 +140,6 @@ class AdministrationLogController extends Controller
         return $cache[$key];
     }
 
-    /**
-     * Safely load an id=>name map from a table using raw DB query.
-     * Returns empty array if the table doesn't exist or query fails.
-     */
     private function safeMap($table, $keyCol, $valueCol)
     {
         try {
@@ -164,12 +155,11 @@ class AdministrationLogController extends Controller
     }
 
     /**
-     * Safely format a date value to "d-m-Y H:i:s".
+     * Format a date for display.
      *
-     * The app timezone is already set to Africa/Cairo in config/app.php,
-     * so Eloquent Carbon objects are already in Cairo time.
-     * Do NOT pass a timezone to Carbon::parse() here — doing so would
-     * re-interpret the already-converted time as UTC and shift it +1 hour.
+     * BaseModel::asDateTime() already parses DB values as Africa/Cairo
+     * (no conversion), so $date is a Carbon object in the correct local
+     * time. Just format it — do NOT re-parse or pass a timezone.
      */
     private function safeDate($date)
     {
@@ -179,64 +169,46 @@ class AdministrationLogController extends Controller
             if ($date instanceof \Carbon\Carbon) {
                 return $date->format('d-m-Y H:i:s');
             }
-            return \Carbon\Carbon::parse($date)->format('d-m-Y H:i:s');
+            // Fallback for raw strings (should not normally happen)
+            return \Carbon\Carbon::parse($date, 'Africa/Cairo')->format('d-m-Y H:i:s');
         } catch (\Exception $e) {
             return (string)$date;
         }
     }
 
-    /**
-     * Format the details field into clean HTML lines.
-     *
-     * Handles 3 formats:
-     *  1. Modern pipe-separated:  "Status: Pending | Group: Collections"
-     *  2. Old raw JSON blob:      "Report Search: {\"status\":\"9\",...}"
-     *  3. Plain text
-     */
     private function formatDetails($raw, $statusMap, $groupMap, $txTypeMap, $bankMap, $segmentMap, $userMap)
     {
         $raw = trim((string)($raw ?? ''));
         if ($raw === '') return '-';
 
-        // ── Format 1: pipe-separated (modern logs) ───────────────────────
         if (strpos($raw, ' | ') !== false) {
             $parts = explode(' | ', $raw);
             $lines = array();
             foreach ($parts as $part) {
                 $part = trim($part);
                 if ($part === '') continue;
-
-                // Resolve any raw status IDs still lurking e.g. "Status: 9"
                 $part = $this->resolveInlineStatus($part, $statusMap);
                 $part = $this->resolveInlineGroup($part, $groupMap);
-
                 $lines[] = htmlspecialchars($part);
             }
             return implode('<br>', $lines);
         }
 
-        // ── Format 2: contains a JSON blob (legacy logs) ─────────────────
         if (preg_match('/\{.*\}/s', $raw, $jsonMatch)) {
             $decoded = json_decode($jsonMatch[0], true);
-
             if (json_last_error() === JSON_ERROR_NONE && is_array($decoded)) {
                 $prefix = trim(str_replace($jsonMatch[0], '', $raw));
                 $prefix = rtrim($prefix, ': ');
-
                 $lines = array();
                 foreach ($decoded as $key => $val) {
                     if ($val === null || $val === '') continue;
-
                     $label   = $this->labelFromKey($key);
                     $display = $this->resolveValue($key, $val, $statusMap, $groupMap, $txTypeMap, $bankMap, $segmentMap, $userMap);
-
                     $lines[] = '<strong>' . htmlspecialchars($label) . ':</strong> ' . htmlspecialchars((string)$display);
                 }
-
                 if (empty($lines)) {
                     return $prefix ? htmlspecialchars($prefix) : 'No filters applied';
                 }
-
                 $out = '';
                 if ($prefix) {
                     $out = '<strong>' . htmlspecialchars($prefix) . '</strong><br>';
@@ -245,17 +217,12 @@ class AdministrationLogController extends Controller
             }
         }
 
-        // ── Format 3: plain string ────────────────────────────────────────
         return htmlspecialchars($raw);
     }
 
-    /**
-     * Resolve a key=>value to a human-readable name using preloaded maps.
-     */
     private function resolveValue($key, $value, $statusMap, $groupMap, $txTypeMap, $bankMap, $segmentMap, $userMap)
     {
         $k = strtolower((string)$key);
-
         if (in_array($k, array('status', 'status_id'))) {
             return isset($statusMap[$value]) ? $statusMap[$value] . ' (ID: ' . $value . ')' : $value;
         }
@@ -274,17 +241,12 @@ class AdministrationLogController extends Controller
         if (in_array($k, array('creator_id', 'creator_name_id', 'user_id'))) {
             return isset($userMap[$value]) ? $userMap[$value] . ' (ID: ' . $value . ')' : $value;
         }
-
         return (string)$value;
     }
 
-    /**
-     * Replace raw "Status: 9" or "Status: 9 → 12" in a text line with names.
-     */
     private function resolveInlineStatus($line, $statusMap)
     {
         if (empty($statusMap)) return $line;
-
         return preg_replace_callback(
             '/\bStatus:\s*(\d+)(\s*(?:→|-+>)\s*(\d+))?/u',
             function ($m) use ($statusMap) {
@@ -299,13 +261,9 @@ class AdministrationLogController extends Controller
         );
     }
 
-    /**
-     * Replace raw "Group: 3" or "Group Id: 3" in a text line with names.
-     */
     private function resolveInlineGroup($line, $groupMap)
     {
         if (empty($groupMap)) return $line;
-
         return preg_replace_callback(
             '/\bGroup(?:\s+Id)?:\s*(\d+)(\s*(?:→|-+>)\s*(\d+))?/u',
             function ($m) use ($groupMap) {
@@ -320,9 +278,6 @@ class AdministrationLogController extends Controller
         );
     }
 
-    /**
-     * Convert a snake_case key into a readable Title Case label.
-     */
     private function labelFromKey($key)
     {
         $key = preg_replace('/_id$/', '', $key);
@@ -331,37 +286,27 @@ class AdministrationLogController extends Controller
         return ucwords($key);
     }
 
-    /**
-     * Delete workflow logs
-     * Only Admin (role 1) may delete logs
-     */
     public function delete_workflow_logs(Request $request)
     {
-        // Only Admin (role 1) may delete logs
         if (Auth::user()->role != 1) {
             return response()->json([
                 'success' => false,
                 'message' => 'Unauthorized Access'
             ], 403);
         }
-
         try {
             $deletedCount = AdministrationLog::where('category', 'Workflow')->delete();
-            
-            // Log the deletion action
             \App\Models\AdministrationLog::create([
-                'user_id' => Auth::id(),
+                'user_id'  => Auth::id(),
                 'category' => 'Workflow',
-                'action' => 'Delete',
-                'details' => "Deleted {$deletedCount} workflow logs"
+                'action'   => 'Delete',
+                'details'  => "Deleted {$deletedCount} workflow logs"
             ]);
-
             return response()->json([
-                'success' => true,
-                'message' => "Successfully deleted {$deletedCount} workflow logs",
+                'success'       => true,
+                'message'       => "Successfully deleted {$deletedCount} workflow logs",
                 'deleted_count' => $deletedCount
             ]);
-
         } catch (\Exception $e) {
             return response()->json([
                 'success' => false,
