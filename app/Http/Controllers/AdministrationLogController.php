@@ -11,6 +11,37 @@ use DB;
 class AdministrationLogController extends Controller
 {
     /**
+     * TEMPORARY DEBUG ENDPOINT — remove after timezone is confirmed correct.
+     * Visit: /administration/debug-time   (add route if needed, see routes/web.php)
+     *
+     * Returns a JSON snapshot showing:
+     *   - MySQL NOW() raw value
+     *   - PHP date() using current PHP timezone
+     *   - The created_at of the latest log as Carbon sees it
+     *   - What safeDate() formats it as
+     */
+    public function debug_time(Request $request)
+    {
+        $mysqlNow   = DB::selectOne('SELECT NOW() as now')->now;
+        $mysqlTz    = DB::selectOne("SELECT @@session.time_zone as tz")->tz;
+        $phpNow     = date('Y-m-d H:i:s');
+        $phpTz      = date_default_timezone_get();
+
+        $latestLog  = AdministrationLog::latest()->first();
+        $carbonRaw  = $latestLog ? (string) $latestLog->created_at : 'no logs';
+        $formatted  = $latestLog ? $this->safeDate($latestLog->created_at) : 'no logs';
+
+        return response()->json([
+            'mysql_now'          => $mysqlNow,
+            'mysql_session_tz'   => $mysqlTz,
+            'php_now'            => $phpNow,
+            'php_timezone'       => $phpTz,
+            'latest_log_carbon'  => $carbonRaw,
+            'latest_log_display' => $formatted,
+        ]);
+    }
+
+    /**
      * Return logs as a JSON HTML table.
      * Called via AJAX when clicking a Logs button.
      */
@@ -31,7 +62,6 @@ class AdministrationLogController extends Controller
             if ($request->filled('category')) {
                 $query->where('category', $request->input('category'));
             }
-            // Only filter by section if the column exists in the table
             if ($request->filled('section') && $this->columnExists('administration_logs', 'section')) {
                 $query->where('section', $request->input('section'));
             }
@@ -42,7 +72,7 @@ class AdministrationLogController extends Controller
             $limit = (int) $request->input('limit', 100);
             $logs  = $query->latest()->limit($limit)->get();
 
-            // ── Pre-load lookup maps (safe — wrapped in try/catch) ────────
+            // ── Pre-load lookup maps ──────────────────────────────────────
             $statusMap  = $this->safeMap('statuses',          'id', 'name');
             $groupMap   = $this->safeMap('groups',            'id', 'name');
             $txTypeMap  = $this->safeMap('transaction_types', 'id', 'name');
@@ -92,8 +122,8 @@ class AdministrationLogController extends Controller
                 $html .= '<tr>';
                 $html .= '<td>' . ($i + 1) . '</td>';
                 $html .= '<td style="white-space:nowrap">' . htmlspecialchars($date) . '</td>';
-                $sectionVal  = $this->columnExists('administration_logs', 'section')   ? (string)($log->section   ?? '-') : '-';
-                $ipVal       = $this->columnExists('administration_logs', 'ip_address') ? (string)($log->ip_address ?? '-') : '-';
+                $sectionVal = $this->columnExists('administration_logs', 'section')    ? (string)($log->section    ?? '-') : '-';
+                $ipVal      = $this->columnExists('administration_logs', 'ip_address') ? (string)($log->ip_address ?? '-') : '-';
 
                 $html .= '<td>' . htmlspecialchars($userName) . '</td>';
                 $html .= '<td>' . htmlspecialchars((string)($log->category ?? '')) . '</td>';
@@ -154,22 +184,13 @@ class AdministrationLogController extends Controller
         }
     }
 
-    /**
-     * Format a date for display.
-     *
-     * BaseModel::asDateTime() already parses DB values as Africa/Cairo
-     * (no conversion), so $date is a Carbon object in the correct local
-     * time. Just format it — do NOT re-parse or pass a timezone.
-     */
     private function safeDate($date)
     {
         if (empty($date)) return '-';
-
         try {
             if ($date instanceof \Carbon\Carbon) {
                 return $date->format('d-m-Y H:i:s');
             }
-            // Fallback for raw strings (should not normally happen)
             return \Carbon\Carbon::parse($date, 'Africa/Cairo')->format('d-m-Y H:i:s');
         } catch (\Exception $e) {
             return (string)$date;
